@@ -39,3 +39,9 @@ Thumbs.db
 
 # Logs
 *.log
+
+# modules
+/docs/modules/ 
+
+# config
+/config/
