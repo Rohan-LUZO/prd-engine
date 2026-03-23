@@ -56,7 +56,7 @@ func main() {
 	modules := api.Group("/modules")
 	{
 		modules.POST("", moduleHandler.SaveModule)
-		modules.GET("", moduleHandler.SaveModule)
+		modules.GET("", moduleHandler.ListModules)
 		modules.GET("/:id", moduleHandler.GetLatest)
 		modules.GET("/:id/history", moduleHandler.GetHistory)
 		modules.GET("/:id/headers", moduleHandler.GetHeaders)

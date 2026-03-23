@@ -99,12 +99,22 @@ func (h *ModuleHandler) SaveModule(c *gin.Context) {
 
 // GET /modules
 func (h *ModuleHandler) ListModules(c *gin.Context) {
+	modules, err := h.service.ListModules()
+
+	if err != nil {
+		response.Send(
+			c,
+			response.New(422).
+				WithMessage("Something went wrong while fetching modules").
+				WithData(nil),
+		)
+	}
 
 	response.Send(
 		c,
 		response.New(200).
 			WithMessage("Modules listed successfully").
-			WithData(nil),
+			WithData(modules),
 	)
 }
 

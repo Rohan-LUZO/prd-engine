@@ -47,6 +47,37 @@ paths:
                     example: ok
 
   /api/modules:
+    get:
+      tags: [Modules]
+      summary: List all modules (latest versions)
+      description: Returns a list of all modules with their latest version metadata. Useful for building a sidebar or module index.
+      operationId: listModules
+      responses:
+        '200':
+          description: List of modules
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  statusCode:
+                    type: integer
+                    example: 200
+                  message:
+                    type: string
+                    example: Modules listed successfully
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Module'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '422':
+          description: Failed to fetch modules
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
     post:
       tags: [Modules]
       summary: Create or update a module (new version)
