@@ -32,6 +32,12 @@ type SaveModuleInput struct {
 	UpdatedBy string
 }
 
+type ModuleListData struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Order int    `json:"order"`
+}
+
 // SaveModule creates a new module (version 1) or saves a new version of an existing module.
 //   - If GetLatest fails (e.g. module does not exist), we treat it as a new module: Version=1, CreatedBy/At set.
 //   - If GetLatest succeeds, we bump Version to latest.Version+1 and preserve original CreatedBy/CreatedAt;
@@ -91,8 +97,35 @@ func (s *ModuleService) SaveModule(input SaveModuleInput) (*domain.Module, error
 }
 
 // List modules list all the modules that are available
-func (s *ModuleService) ListModules() ([]string, error) {
-	return s.repo.ListModuleIDs()
+func (s *ModuleService) ListModules() ([]ModuleListData, error) {
+	moduleIds, err := s.repo.ListModuleIDs()
+
+	// if error present return error
+	if err != nil {
+		return nil, err
+	}
+
+	var modules []ModuleListData
+
+	// if module ids exists then iterate and fetch latest versions
+	for _, id := range moduleIds {
+		mod, err := s.repo.GetLatest(id)
+		if err != nil {
+			continue
+		}
+		modules = append(modules, ModuleListData{
+			ID:    id,
+			Title: mod.Title,
+			Order: mod.Order,
+		})
+	}
+
+	// order modules according to order of module list
+	sort.Slice(modules, func(i, j int) bool {
+		return modules[i].Order < modules[j].Order
+	})
+
+	return modules, nil
 }
 
 func (s *ModuleService) GetLatest(moduleID string) (*domain.Module, error) {
