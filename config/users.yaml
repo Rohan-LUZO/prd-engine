@@ -1,0 +1,5 @@
+- username: admin
+  full_name: Admin User
+  token: admin-dev-token
+  roles: ["admin"]
+

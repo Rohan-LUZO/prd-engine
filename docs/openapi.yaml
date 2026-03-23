@@ -1,0 +1,427 @@
+openapi: 3.0.3
+info:
+  title: PRD Engine API
+  description: |
+    API for the PRD (Product Requirements Document) Engine. It supports:
+    - **Modules**: Create and update documentation modules with versioning. Each save creates a new version; previous versions are kept for history.
+    - **Audit**: Every module tracks who created/updated it and when (CreatedBy, UpdatedBy, CreatedAt, UpdatedAt).
+    - **Headers**: Extract markdown headings from a module for table-of-contents or in-page navigation.
+    - **Export**: Combine all modules (latest versions only) into one document and export as JSON or PDF, including a document history table (who updated what).
+    All API routes under `/api` require Bearer token authentication (see Security).
+  version: 1.0.0
+  contact:
+    name: PRD Engine
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Health
+    description: Liveness and readiness
+  - name: Modules
+    description: CRUD and metadata for documentation modules
+  - name: Export
+    description: Combined document export (PDF or JSON)
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      description: Returns service status. Requires Bearer token (same as all other routes).
+      operationId: getHealth
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /api/modules:
+    post:
+      tags: [Modules]
+      summary: Create or update a module (new version)
+      description: |
+        Creates a new module (version 1) if the module ID does not exist, or saves a **new version** of an existing module (version incremented).
+        The request body is the full module payload; the authenticated user (from Bearer token) is recorded as UpdatedBy (and CreatedBy for new modules).
+        Order must be a positive integer (used for sorting in combined export).
+      operationId: saveModule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaveModuleRequest'
+      responses:
+        '200':
+          description: Module saved successfully (new version created)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponseWithModule'
+        '400':
+          description: Invalid request payload (missing or invalid fields)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+        '401':
+          description: Unauthorized (missing or invalid token)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+        '422':
+          description: Validation or business rule error (e.g. invalid order)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+
+  /api/modules/{id}:
+    get:
+      tags: [Modules]
+      summary: Get latest version of a module
+      description: Returns the latest version of the module identified by `id`. The response includes full content, metadata, and audit fields (CreatedBy, UpdatedBy, CreatedAt, UpdatedAt).
+      operationId: getLatestModule
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Module ID (e.g. checkout-flow, onboarding)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Module found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponseWithModule'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Module not found or no versions exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+
+  /api/modules/{id}/history:
+    get:
+      tags: [Modules]
+      summary: List version numbers for a module
+      description: Returns the list of version numbers (e.g. [1, 2, 3]) for the module, sorted ascending. Use this to show a version selector or to request a specific version via the headers endpoint.
+      operationId: getModuleHistory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of version numbers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  statusCode:
+                    type: integer
+                    example: 200
+                  message:
+                    type: string
+                    example: Module history fetched successfully
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        description: Module ID
+                      versions:
+                        type: array
+                        items:
+                          type: integer
+                        description: Sorted list of version numbers (e.g. [1, 2, 3])
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Module not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+
+  /api/modules/{id}/headers:
+    get:
+      tags: [Modules]
+      summary: Get markdown headings (table of contents) for a module
+      description: |
+        Returns a flat list of markdown headings (#, ##, ###) extracted from the module content.
+        Each item has level (1–3), text (heading text), and anchor (URL-friendly slug for in-page links).
+        Use this to build a sidebar or table-of-contents in your frontend.
+        - If **version** query is omitted, the **latest** version's content is used.
+        - If **version** is provided (e.g. ?version=2), that specific version's headings are returned (useful when viewing history).
+      operationId: getModuleHeaders
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: version
+          in: query
+          required: false
+          description: Specific version number; if omitted, latest is used.
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: List of headings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  statusCode:
+                    type: integer
+                    example: 200
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      headers:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/ModuleHeader'
+        '400':
+          description: Invalid version parameter (e.g. non-integer or <= 0)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Module or version not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+
+  /api/export:
+    get:
+      tags: [Export]
+      summary: Export combined document (all modules, latest versions)
+      description: |
+        Combines **all** modules' **latest versions** into one document, sorted by each module's Order.
+        Use this to generate a single PRD document for download or display.
+        - **format=json** (default): Returns JSON with title, generatedAt, and modules array (each with id, title, order, version, content, updatedBy, updatedAt, createdBy, createdAt). Ideal for preview or custom rendering.
+        - **format=pdf**: Returns a PDF file (application/pdf) with document title, each module's content (markdown headings rendered), an audit line per module (last updated by, date, version), and a final "Document history" table. Response is sent as attachment `prd-documentation.pdf`.
+        **title** query: Optional document title (default "PRD Documentation"). Used as the PDF/JSON document title.
+      operationId: exportDocument
+      parameters:
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [json, pdf]
+            default: json
+        - name: title
+          in: query
+          required: false
+          description: Document title (e.g. "Q1 PRD")
+          schema:
+            type: string
+            default: PRD Documentation
+      responses:
+        '200':
+          description: |
+            - If format=json, returns JSON body with combined document.
+            - If format=pdf, returns binary PDF with Content-Type application/pdf and Content-Disposition attachment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CombinedDocumentResponse'
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          description: Export or PDF generation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIError'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: "Token from your auth provider (file-based tokens in config/users.yaml). Send as Authorization: Bearer <token>."
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid Authorization header
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/APIError'
+
+  schemas:
+    SaveModuleRequest:
+      type: object
+      required: [id, title, order, surfaces, content]
+      properties:
+        id:
+          type: string
+          description: Unique module identifier (e.g. checkout-flow)
+        title:
+          type: string
+          description: Display title
+        order:
+          type: integer
+          minimum: 1
+          description: Sort order for combined export (lower = earlier in document)
+        surfaces:
+          type: array
+          items:
+            type: string
+            enum: [customer_app, website, admin_dashboard, partner_app, leads_app]
+          description: Product surfaces this module applies to
+        content:
+          type: string
+          description: Markdown body (can include # ## ### headings)
+
+    Module:
+      type: object
+      properties:
+        ID:
+          type: string
+        Version:
+          type: integer
+        Title:
+          type: string
+        Order:
+          type: integer
+        Surfaces:
+          type: array
+          items:
+            type: string
+        Content:
+          type: string
+        CreatedBy:
+          type: string
+        CreatedAt:
+          type: string
+          format: date-time
+        UpdatedBy:
+          type: string
+        UpdatedAt:
+          type: string
+          format: date-time
+
+    ModuleHeader:
+      type: object
+      properties:
+        level:
+          type: integer
+          description: 1 = H1, 2 = H2, 3 = H3
+        text:
+          type: string
+          description: Heading text
+        anchor:
+          type: string
+          description: URL-friendly slug for #anchor links
+
+    APIResponseWithModule:
+      type: object
+      properties:
+        status:
+          type: string
+        statusCode:
+          type: integer
+          example: 200
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/Module'
+
+    CombinedDocumentResponse:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            title:
+              type: string
+            generatedAt:
+              type: string
+              format: date-time
+            modules:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  title:
+                    type: string
+                  order:
+                    type: integer
+                  version:
+                    type: integer
+                  content:
+                    type: string
+                  updatedBy:
+                    type: string
+                  updatedAt:
+                    type: string
+                    format: date-time
+                  createdBy:
+                    type: string
+                  createdAt:
+                    type: string
+                    format: date-time
+
+    APIError:
+      type: object
+      properties:
+        status:
+          type: string
+        statusCode:
+          type: integer
+        message:
+          type: string
+        userMessageTitle:
+          type: string
+        userMessageText:
+          type: string
+        errors:
+          type: string
+          description: Optional validation details
+        tag:
+          type: string
