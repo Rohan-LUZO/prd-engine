@@ -47,6 +47,10 @@ func main() {
 	})
 
 	r.GET("/docs", docsBasicAuth, serveSwaggerUI)
+	r.GET("/swagger.yaml", docsBasicAuth, func(c *gin.Context) {
+		c.Header("Content-Type", "application/x-yaml")
+		c.File("docs/openapi.yaml")
+	})
 
 	// ---- Protected routes (Bearer token required) ----
 	protected := r.Group("/")
