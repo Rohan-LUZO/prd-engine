@@ -2,7 +2,6 @@ package main
 
 import (
 	"log"
-	"path/filepath"
 
 	"prd-engine/internal/auth"
 	"prd-engine/internal/http/middleware"
@@ -16,6 +15,7 @@ import (
 func main() {
 	// ---------- config ----------
 	baseDocsPath := "docs/modules"
+	docsAuthPath := "config/docs_auth.yaml"
 	usersFilePath := "config/users.yaml"
 	port := ":8080"
 
@@ -23,6 +23,11 @@ func main() {
 	userStore, err := auth.NewFileUserStore(usersFilePath)
 	if err != nil {
 		log.Fatalf("failed to load users: %v", err)
+	}
+
+	docsAuthCfg, err := auth.LoadDocsAuth(docsAuthPath)
+	if err != nil {
+		log.Fatalf("failed to load docs auth: %v", err)
 	}
 
 	repo := repository.NewFileModuleRepository(baseDocsPath)
@@ -36,13 +41,12 @@ func main() {
 	r.Use(gin.Logger())
 	r.Use(middleware.Recovery())
 
-	// ---- Public: Swagger / OpenAPI (no auth) ----
-	r.GET("/swagger.yaml", func(c *gin.Context) {
-		path := filepath.Join("docs", "openapi.yaml")
-		c.Header("Content-Type", "application/x-yaml")
-		c.File(path)
+	// ---- Public: Swagger / OpenAPI (basic auth) ----
+	docsBasicAuth := gin.BasicAuth(gin.Accounts{
+		docsAuthCfg.Username: docsAuthCfg.Password,
 	})
-	r.GET("/docs", serveSwaggerUI)
+
+	r.GET("/docs", docsBasicAuth, serveSwaggerUI)
 
 	// ---- Protected routes (Bearer token required) ----
 	protected := r.Group("/")
